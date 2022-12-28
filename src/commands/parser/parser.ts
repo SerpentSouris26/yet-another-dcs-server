@@ -9,6 +9,7 @@ import { lexer as Lexer, TokenKind } from '../lexer'
 import { ParserUnexpectedTokenError, ParserUnknownTokenError } from './errors'
 import { Coalition } from '../../../generated/dcs/common/v0/Coalition'
 import { SpawnerType } from '../../spawner'
+import { BaseType } from '../../base'
 
 export type Value = string | number | (string | number)[] | Command
 
@@ -48,10 +49,11 @@ function processCommand(lexer: Lexer): Command {
   const type = matchCommand(typeToken.value)
 
   if (CommandType.SpawnGroundUnit === type) {
-    type Units = { fuzzyUnitName: string; count?: number }[]
+    type Units = { fuzzyUnitName: string; count?: number; heading: number }[]
 
     const units: Units = []
     let coalition: Coalition | undefined
+    let heading = 0
 
     // process all remaining tokens
     const parseParts = (): void => {
@@ -61,7 +63,7 @@ function processCommand(lexer: Lexer): Command {
         return
       }
 
-      // if string or word, assume it's a unitName
+      // if string or word, check for keywords. otherwise assume unitName
       if (
         TokenKind.String === nextToken.kind ||
         TokenKind.Word === nextToken.kind
@@ -78,9 +80,20 @@ function processCommand(lexer: Lexer): Command {
           return parseParts()
         }
 
+        if ('heading' === lowerValue) {
+          const headingValueToken = lexer.nextToken()
+
+          if (TokenKind.Number !== headingValueToken.kind) {
+            throw new Error('expected number token following heading keyword')
+          }
+
+          heading = headingValueToken.value
+          return parseParts()
+        }
+
         const fuzzyUnitName = nextToken.value
 
-        units.push({ fuzzyUnitName })
+        units.push({ fuzzyUnitName, heading })
 
         return parseParts()
       }
@@ -96,7 +109,7 @@ function processCommand(lexer: Lexer): Command {
         ) {
           const fuzzyUnitName = unitNameToken.value
 
-          units.push({ fuzzyUnitName, count })
+          units.push({ fuzzyUnitName, count, heading })
 
           return parseParts()
         }
@@ -109,8 +122,8 @@ function processCommand(lexer: Lexer): Command {
 
     return {
       type: CommandType.SpawnGroundUnit,
-      units,
       coalition,
+      units,
     }
   }
 
@@ -143,6 +156,10 @@ function processCommand(lexer: Lexer): Command {
         }
         if (/^spawner/.test(lowerValue) === true) {
           typeToDestroy = ToDestroy.Spawner
+          return parseParts()
+        }
+        if (/^base/.test(lowerValue) === true) {
+          typeToDestroy = ToDestroy.Base
           return parseParts()
         }
 
@@ -279,6 +296,69 @@ function processCommand(lexer: Lexer): Command {
 
     throw new Error('unexpected token parsing spawnGroup')
   }
+  if (CommandType.SpawnBase === type) {
+    let baseType: BaseType = BaseType.UnderConstruction
+    let coalition: Coalition | undefined
+    let heading = 0
+
+    const parseParts = () => {
+      const nextToken = lexer.nextToken()
+
+      if (TokenKind.EOF === nextToken.kind) {
+        return
+      }
+
+      if (
+        TokenKind.Word === nextToken.kind ||
+        TokenKind.String === nextToken.kind
+      ) {
+        const lowerValue = nextToken.value.toLowerCase()
+
+        // coalition
+        if ('red' === lowerValue) {
+          coalition = Coalition.COALITION_RED
+        }
+        if ('blue' === lowerValue) {
+          coalition = Coalition.COALITION_BLUE
+        }
+
+        // baseType
+        if ('cop' === lowerValue) {
+          baseType = BaseType.COP
+        }
+        if ('farp' === lowerValue) {
+          baseType = BaseType.FARP
+        }
+        if ('fob' === lowerValue) {
+          baseType = BaseType.FOB
+        }
+        if ('mob' === lowerValue) {
+          baseType = BaseType.MOB
+        }
+
+        if (lowerValue === 'heading') {
+          const radiusValueToken = lexer.nextToken()
+
+          if (TokenKind.Number !== radiusValueToken.kind) {
+            throw new Error('expected number token following heading keyword')
+          }
+
+          heading = radiusValueToken.value
+        }
+      }
+
+      parseParts()
+    }
+
+    parseParts()
+
+    return {
+      type: CommandType.SpawnBase,
+      baseType,
+      coalition,
+      heading,
+    }
+  }
 
   if (CommandType.Smoke === type) {
     const nextToken = lexer.nextToken()
@@ -381,6 +461,9 @@ function matchCommand(input: string): CommandType {
   if ('spawn' === lowerInput) {
     return CommandType.SpawnGroundUnit
   }
+  if ('delete' === lowerInput) {
+    return CommandType.Destroy
+  }
   if ('destroy' === lowerInput) {
     return CommandType.Destroy
   }
@@ -389,6 +472,9 @@ function matchCommand(input: string): CommandType {
   }
   if ('spawngroup' === lowerInput) {
     return CommandType.SpawnGroup
+  }
+  if ('spawnbase' === lowerInput) {
+    return CommandType.SpawnBase
   }
   if ('smoke' === lowerInput) {
     return CommandType.Smoke

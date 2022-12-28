@@ -3,10 +3,7 @@ import {
   BaseCargo,
   Cargo,
   CargoType,
-  CargoTypeName,
-  isBaseCargo,
   isBaseCargoType,
-  isUnitCargoType,
   UnitCargo,
 } from '../cargo'
 import { distanceFrom, metersToDegree, PositionLL } from '../common'
@@ -20,7 +17,15 @@ import { knex, Cargo as DBCargo, Position as DBPosition } from './db'
 export async function insertCargo(
   cargo: Omit<BaseCargo, 'cargoId'> | Omit<UnitCargo, 'cargoId'>
 ): Promise<Cargo> {
-  const { displayName, internal, mass, position, type, typeName } = cargo
+  const {
+    displayName,
+    internal,
+    mass,
+    originBaseId,
+    position,
+    type,
+    typeName,
+  } = cargo
 
   const uuid = knex.fn.uuidToBin(cargo.uuid)
 
@@ -50,6 +55,7 @@ export async function insertCargo(
         displayName,
         internal,
         mass,
+        originBaseId,
         positionId,
         type,
         typeName,
@@ -69,6 +75,7 @@ export async function insertCargo(
       lat,
       lon,
       mass,
+      originBaseId,
       type,
       typeName,
       unitTypeName,
@@ -82,6 +89,7 @@ export async function insertCargo(
       displayName,
       internal,
       mass,
+      originBaseId,
       positionId,
       type,
       typeName,
@@ -100,6 +108,7 @@ export async function insertCargo(
     lat,
     lon,
     mass,
+    originBaseId,
     type,
     typeName,
     uuid,
@@ -161,6 +170,7 @@ export function cargoFrom(
     | 'displayName'
     | 'internal'
     | 'mass'
+    | 'originBaseId'
     | 'type'
     | 'typeName'
     | 'unitTypeName'
@@ -176,6 +186,7 @@ export function cargoFrom(
     lat,
     lon,
     mass,
+    originBaseId,
     typeName,
     unitTypeName,
     uuid,
@@ -188,6 +199,7 @@ export function cargoFrom(
       displayName,
       internal,
       mass,
+      originBaseId,
       position: {
         alt,
         lat,
@@ -215,6 +227,7 @@ export function cargoFrom(
       displayName,
       internal,
       mass,
+      originBaseId,
       position: {
         alt,
         lat,
@@ -239,6 +252,7 @@ export async function allCargos(): Promise<Cargo[]> {
       'displayName',
       'internal',
       'mass',
+      'originBaseId',
       'lat',
       'lon',
       'type',
@@ -273,6 +287,7 @@ export async function nearbyCargos({
       'displayName',
       'internal',
       'mass',
+      'originBaseId',
       'lat',
       'lon',
       'type',
@@ -298,4 +313,12 @@ export async function nearbyCargos({
     .filter(cargo => cargo.distance <= accuracy)
     .sort((a, b) => a.distance - b.distance)
     .map(cargo => cargo.cargo)
+}
+
+export async function deleteCargo({ cargoId }: Cargo): Promise<void> {
+  await knex('cargos')
+    .where({
+      cargoId,
+    })
+    .delete()
 }

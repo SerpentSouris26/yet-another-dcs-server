@@ -1,4 +1,5 @@
 import { equal } from 'assert'
+import { Coalition } from '../../generated/dcs/common/v0/Coalition'
 import { Base } from '../base'
 import { metersToDegree, PositionLL } from '../common'
 import { LatLon } from '../geo'
@@ -104,6 +105,15 @@ export function baseFrom(
   }
 }
 
+export async function allBases(): Promise<Base[]> {
+  const bases = await knex('bases')
+    .innerJoin('positions', 'bases.positionId', 'positions.positionId')
+    .select(['baseId', 'coalition', 'heading', 'lat', 'lon', 'name', 'type'])
+    .whereNull('goneAt')
+
+  return bases.map(base => baseFrom(base))
+}
+
 /**
  * Search for bases nearby a given PositionLL within a given accuracy.
  * Search uses a very simple box model algorithm to reduce the initial search set
@@ -111,17 +121,20 @@ export function baseFrom(
 export async function nearbyBases({
   position,
   accuracy,
+  coalition,
 }: {
   /** position to search from */
   position: Pick<PositionLL, 'lat' | 'lon'>
   /** accuracy of search in meters */
   accuracy: number
+  /** coalition to search for */
+  coalition: Coalition
 }): Promise<Base[]> {
   const { lat, lon } = position
 
-  const nearby = await knex('bases')
+  let query = knex('bases')
     .innerJoin('positions', 'bases.positionId', 'positions.positionId')
-    .select(['baseId', 'coalition', 'heading', 'lat', 'lon', 'name', 'type'])
+    .select('*')
     .whereBetween('lat', [
       lat - metersToDegree(accuracy),
       lat + metersToDegree(accuracy),
@@ -131,6 +144,13 @@ export async function nearbyBases({
       lon + metersToDegree(accuracy),
     ])
     .whereNull('goneAt')
+
+  // if not Coalition_ALL, search by country
+  if (Coalition.COALITION_ALL !== coalition) {
+    query = query.where({ coalition })
+  }
+
+  const nearby = await query
 
   return nearby
     .map(dbBase => {
@@ -146,4 +166,12 @@ export async function nearbyBases({
     .filter(base => base.distance <= accuracy)
     .sort((a, b) => a.distance - b.distance)
     .map(base => base.base)
+}
+
+export async function deleteBase({ baseId }: Base): Promise<void> {
+  await knex('bases')
+    .where({
+      baseId,
+    })
+    .delete()
 }

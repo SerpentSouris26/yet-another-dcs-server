@@ -15,7 +15,7 @@ import {
   vec3From,
 } from './common'
 import { Position3, PositionLL, Velocity } from './common'
-import { knex, Unit as DBUnit, insertUnit } from './db'
+import { knex, Unit as DBUnit, insertUnit, deleteUnit } from './db'
 import { GetTransformResponse__Output } from '../generated/dcs/unit/v0/GetTransformResponse'
 import { countryFrom } from './country'
 
@@ -66,6 +66,17 @@ export enum UnitTypeName {
   NasamLnC = 'NASAMS_LN_C', // SAM NASAMS LN AIM-120C
   NasamSr = 'NASAMS_Radar_MPQ64F1', // SAM NASAMS SR MPQ64F1
   NasamC2 = 'NASAMS_Command_Post', // SAM NASAMS C2
+  // helicopters
+  UH1H = 'UH-1H',
+  AH64D = 'AH-64D_BLK_II',
+  MI24 = 'Mi-24P',
+  MI8 = 'Mi-8MT',
+  UH60 = 'UH-60L',
+  KA50 = 'Ka-50',
+  KA503 = 'Ka-50_3',
+  // utility
+  M818 = 'M 818',
+  M978 = 'M978 HEMTT Tanker',
 }
 
 export interface Unit {
@@ -103,7 +114,7 @@ export async function spawnGroundUnitsOnCircle(
   country: Country,
   focus: PositionLL,
   radius: number,
-  units: Pick<Unit, 'typeName'>[]
+  units: Pick<Unit, 'typeName' | 'heading'>[]
 ) {
   const circleUnits = units.map(unit => ({
     ...unit,
@@ -116,8 +127,6 @@ export async function spawnGroundUnitsOnCircle(
     circleUnits.map(async unitToSpawn => {
       const unit = await createUnit({
         country,
-        // TODO: choose the heading to spawn the unit at
-        heading: 0,
         isPlayerSlot: false,
         ...unitToSpawn,
       })
@@ -131,7 +140,7 @@ export async function spawnGroundUnitsInCircle(
   country: Country,
   focus: PositionLL,
   radius: number,
-  units: Pick<DBUnit, 'typeName'>[]
+  units: Pick<Unit, 'typeName' | 'heading'>[]
 ) {
   return Promise.all(
     units.map(unit => spawnGroundUnitInCircle(country, focus, radius, unit))
@@ -142,7 +151,7 @@ export async function spawnGroundUnitInCircle(
   country: Country,
   focus: PositionLL,
   radius: number,
-  unitToSpawn: Pick<DBUnit, 'typeName'>
+  unitToSpawn: Pick<Unit, 'typeName' | 'heading'>
 ) {
   const position: PositionLL = {
     ...randomPositionInCircle(focus, radius),
@@ -151,12 +160,12 @@ export async function spawnGroundUnitInCircle(
     alt: 0,
   }
 
-  const { typeName } = unitToSpawn
+  const { heading, typeName } = unitToSpawn
 
   const unit = await createUnit({
     country,
     // TODO: choose a heading to spawn the unit at
-    heading: 0,
+    heading,
     isPlayerSlot: false,
     position,
     typeName,
@@ -189,7 +198,7 @@ export async function setUnitInternalCargoMass(
   const lua = `return trigger.action.setUnitInternalCargo("${unit.name}", ${mass})`
 
   return new Promise((resolve, reject) => {
-    custom.eval({ lua }, (error, result) => {
+    custom.eval({ lua }, error => {
       if (error) {
         return reject(error)
       }
@@ -310,8 +319,8 @@ export async function uniqueUnitName(): Promise<string> {
   return name
 }
 
-export async function destroy(unitName: string): Promise<void> {
-  const lua = `Unit.getByName("${unitName}"):destroy()`
+export async function despawnUnit({ name }: Pick<Unit, 'name'>): Promise<void> {
+  const lua = `Unit.getByName("${name}"):destroy()`
   return new Promise<void>((resolve, reject) =>
     services.custom.eval({ lua }, error => {
       if (error) {
@@ -392,4 +401,8 @@ export function unitFrom(
     position: positionLLFrom(position),
     typeName: type,
   }
+}
+
+export async function destroyUnit(unit: Unit): Promise<void> {
+  await deleteUnit(unit.unitId)
 }

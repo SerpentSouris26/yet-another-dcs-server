@@ -1,6 +1,5 @@
 import { equal } from 'assert'
 
-import { Coalition } from '../../generated/dcs/common/v0/Coalition'
 import {
   Events,
   EventType,
@@ -10,7 +9,7 @@ import {
 import { markToAll, outText, removeMapMark } from '../trigger'
 
 import { getMarkById, getMarkPanels, MarkPanel } from '../custom'
-import { Command, CommandType, ToDestroy } from '../commands'
+import { CommandType, ToDestroy } from '../commands'
 import { allSpawners, insertSpawner, spawnerDestroyed } from '../db/spawners'
 import { Spawner, SpawnerType } from '../spawner'
 import { randomBetween } from '../common'
@@ -19,12 +18,12 @@ import {
   knex,
   Position,
   SpawnerQueue,
-  Unit,
   Spawner as DBSpawner,
   unitDestroyed,
+  unitFrom,
 } from '../db'
 import { PositionLL } from '../common'
-import { isPlayerUnit, spawnGroundUnitsInCircle } from '../unit'
+import { isPlayerUnit, spawnGroundUnitsInCircle, Unit } from '../unit'
 import { insertSpawnerQueue, spawnerQueueDone } from '../db/spawnerQueues'
 import { UnitEvents, UnitEventType, UnitGoneEvent } from '../unitEvents'
 import { closestPointOnRoads, findPathOnRoads, RoadType } from '../land'
@@ -150,7 +149,7 @@ function respawnQueue(): () => void {
           `Attempting to spawn ${SPAWNER_MAXIMUM_UNITS_PER_CYCLE} units for spawner ${spawnerId}. Spawner has a queue depth of ${depth}`
         )
 
-        const unitsToSpawn = await knex('units')
+        const dbUnitsToSpawn = await knex('units')
           .leftOuterJoin('positions', function () {
             this.on('units.positionId', '=', 'positions.positionId')
           })
@@ -167,6 +166,9 @@ function respawnQueue(): () => void {
               | 'lat'
               | 'lon'
               | 'alt'
+              | 'heading'
+              | 'isPlayerSlot'
+              | 'name'
             >[]
           >([
             'spawnerId',
@@ -176,10 +178,21 @@ function respawnQueue(): () => void {
             'lat',
             'lon',
             'alt',
+            'heading',
+            'isPlayerSlot',
+            'name',
           ])
           .where({ spawnerId })
           .whereNull('spawnerQueues.doneAt')
           .limit(SPAWNER_MAXIMUM_UNITS_PER_CYCLE)
+
+        const unitsToSpawn = dbUnitsToSpawn.map(unit => {
+          const { spawnerId } = unit
+          return {
+            ...unitFrom(unit),
+            spawnerId,
+          }
+        })
 
         const randomUnit =
           unitsToSpawn[randomBetween(1, unitsToSpawn.length) - 1]
@@ -189,9 +202,7 @@ function respawnQueue(): () => void {
         }
 
         // use the position of one of the units randomly
-        const { country, lat, lon, alt } = randomUnit
-
-        const unitDeathPosition: PositionLL = { lat, lon, alt }
+        const { country, position: unitDeathPosition } = randomUnit
 
         const [firstOnRoadPosition, lastOnRoadPosition]: [
           PositionLL,
@@ -288,7 +299,8 @@ async function handleUnitGoneEvent(event: UnitGoneEvent) {
   const unit = await findUnit(event.unit.name)
 
   if (!unit) {
-    throw new Error('gone unit not found in db, or already destroyed/gone')
+    // quietly ignore units not in the database (units can exist in missions that YADS doesn't manage)
+    return
   }
 
   if (isPlayerUnit(unit)) {

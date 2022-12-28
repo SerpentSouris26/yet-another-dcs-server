@@ -1,4 +1,3 @@
-import { equal } from 'assert'
 import { StaticObject, StaticObjectTypeName } from '../staticObject'
 import { distanceFrom, metersToDegree, PositionLL } from '../common'
 import {
@@ -60,7 +59,7 @@ export async function insertStaticObject(
   })
 }
 
-export async function destroyStaticObject(
+export async function deleteStaticObject(
   staticObjectId: number
 ): Promise<void> {
   await knex('staticObjects').where({ staticObjectId }).delete()

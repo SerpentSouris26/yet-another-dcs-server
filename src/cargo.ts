@@ -1,8 +1,9 @@
 import { v4 as uuidV4 } from 'uuid'
+import { Base } from './base'
 import { PositionLL } from './common'
-import { insertCargo } from './db'
+import { deleteCargo, insertCargo } from './db'
 import { deleteUnitCargo, insertUnitCargo } from './db/unitCargos'
-import { spawnStaticObject } from './staticObject'
+
 import { setUnitInternalCargoMass, Unit, UnitTypeName } from './unit'
 
 export enum CargoType {
@@ -21,21 +22,18 @@ export enum CargoTypeName {
   UH1HCargo = 'uh1h_cargo',
 }
 
-export type NewBaseCargo = Pick<
-  BaseCargo,
-  'displayName' | 'internal' | 'mass' | 'position' | 'type' | 'typeName'
->
-
-export type NewUnitCargo = Pick<
-  UnitCargo,
+export type NewCargoProperties =
   | 'displayName'
   | 'internal'
   | 'mass'
+  | 'originBaseId'
   | 'position'
   | 'type'
   | 'typeName'
-  | 'unitTypeName'
->
+
+export type NewBaseCargo = Pick<BaseCargo, NewCargoProperties>
+
+export type NewUnitCargo = Pick<UnitCargo, NewCargoProperties | 'unitTypeName'>
 
 export type NewCargo = NewBaseCargo | NewUnitCargo
 
@@ -44,6 +42,7 @@ export interface CargoBase {
   cargoId: number
   internal: boolean
   mass: number
+  originBaseId: number
   position: PositionLL
   type: CargoType
   typeName: CargoTypeName
@@ -52,6 +51,8 @@ export interface CargoBase {
 
 export interface BaseCargo extends CargoBase {
   type: CargoType.BaseCreate | CargoType.BaseUpgrade
+  // TODO: add something like this to solve bases being upgraded with their own crate
+  // takenFrom: Base['baseId']
 }
 export interface UnitCargo extends CargoBase {
   type: CargoType.UnitCreate
@@ -94,11 +95,17 @@ export async function loadCargo(unit: Unit, cargo: Cargo): Promise<void> {
  * @param cargo the cargo to be unloaded
  */
 export async function unloadCargo(unit: Unit, cargo: Cargo): Promise<void> {
-  // mark cargo in db as loaded for this unit
-  await deleteUnitCargo(unit, cargo)
+  // destroy the cargo
+  await destroyCargo(unit, cargo)
 
   // set unit weight in dcs
   await setUnitInternalCargoMass(unit, 0)
+}
+
+export async function destroyCargo(unit: Unit, cargo: Cargo): Promise<void> {
+  await deleteUnitCargo(unit, cargo)
+
+  await deleteCargo(cargo)
 }
 
 export function isBaseCargo(cargo: Cargo): cargo is BaseCargo {

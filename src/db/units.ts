@@ -1,7 +1,7 @@
 import { knex, Unit as DBUnit, Position as DBPosition } from './db'
 import { countryFrom } from '../country'
 import { getPositionVelocity, Unit } from '../unit'
-import { metersToDegree, distanceFrom, headingFrom } from '../common'
+import { metersToDegree, headingFrom } from '../common'
 import { equal } from 'assert'
 import { PositionLL } from '../common'
 import { Coalition } from '../../generated/dcs/common/v0/Coalition'
@@ -171,12 +171,12 @@ export async function nearbyUnits({
   position: PositionLL
   accuracy: number
   coalition: Coalition
-}) {
+}): Promise<Unit[]> {
   const { lat, lon } = position
 
   let query = knex('units')
-    .innerJoin('positions', 'bases.positionId', 'positions.positionId')
-    .select(['unitId', 'name', 'country', 'lat', 'lon', 'alt'])
+    .innerJoin('positions', 'units.positionId', 'positions.positionId')
+    .select('*')
     .whereBetween('lat', [
       lat - metersToDegree(accuracy),
       lat + metersToDegree(accuracy),
@@ -197,13 +197,12 @@ export async function nearbyUnits({
   const nearby = await query
 
   return await nearby
-    .map(unit => {
-      const { lat, lon, alt } = unit
-      const unitPosition = { lat, lon, alt }
+    .map(dbUnit => {
+      const unit = unitFrom(dbUnit)
       return {
         unit,
         distance: new LatLon(position.lat, position.lon).distanceTo(
-          new LatLon(unitPosition.lat, unitPosition.lon)
+          new LatLon(unit.position.lat, unit.position.lon)
         ),
       }
     })
@@ -213,11 +212,10 @@ export async function nearbyUnits({
 }
 
 export function unitFrom(
-  dbUnit: Pick<
-    DBUnit,
-    'name' | 'country' | 'isPlayerSlot' | 'typeName' | 'unitId'
-  > &
-    Pick<DBPosition, 'lat' | 'lon' | 'alt' | 'heading'>
+  dbUnit: Pick<DBUnit, 'name' | 'country' | 'typeName' | 'unitId'> &
+    Pick<DBPosition, 'lat' | 'lon' | 'alt' | 'heading'> & {
+      isPlayerSlot: number | boolean
+    }
 ): Unit {
   const {
     alt,
@@ -244,4 +242,8 @@ export function unitFrom(
     typeName,
     unitId,
   }
+}
+
+export async function deleteUnit(unitId: Unit['unitId']): Promise<void> {
+  await knex('units').where({ unitId }).delete()
 }

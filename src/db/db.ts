@@ -1,7 +1,7 @@
 import { Knex, knex as knexActual } from 'knex'
 import { Coalition } from '../../generated/dcs/common/v0/Coalition'
 import { SpawnerType } from '../spawner'
-import { CargoBase, CargoType, CargoTypeName } from '../cargo'
+import { CargoType, CargoTypeName } from '../cargo'
 import { BaseType } from '../base'
 import { StaticObjectTypeName } from '../staticObject'
 import { UnitTypeName } from '../unit'
@@ -73,6 +73,7 @@ export interface Cargo {
   goneAt?: Date
   internal: boolean
   mass: number
+  originBaseId: number
   positionId: number
   type: CargoType
   typeName: CargoTypeName
@@ -87,6 +88,7 @@ type CargoInsert = Pick<
   | 'displayName'
   | 'internal'
   | 'mass'
+  | 'originBaseId'
   | 'positionId'
   | 'type'
   | 'typeName'

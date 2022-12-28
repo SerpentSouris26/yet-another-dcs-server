@@ -1,5 +1,4 @@
 import { Position } from '../../generated/dcs/common/v0/Position'
-import { Coalition } from '../../generated/dcs/common/v0/Coalition'
 import {
   BirthEvent,
   Events,
@@ -18,7 +17,8 @@ import { countryFrom } from '../country'
 import { searchUnits } from './searchUnits'
 import {
   createUnit,
-  destroy,
+  despawnUnit,
+  destroyUnit,
   spawnGroundUnit,
   spawnGroundUnitsInCircle,
   spawnGroundUnitsOnCircle,
@@ -113,11 +113,12 @@ async function handleMarkChangeEvent(event: MarkChangeEvent) {
       }
 
       const { coalition = addedMark.coalition } = command
+      const { position } = addedMark
 
       // TODO: use the map marker to post errors back to the user
 
       const unitsToSpawn = command.units
-        .map(({ fuzzyUnitName, count }) => {
+        .map(({ fuzzyUnitName, count, heading }) => {
           const unitToSpawn = searchUnits(fuzzyUnitName)
 
           if (!unitToSpawn.desc) {
@@ -126,6 +127,7 @@ async function handleMarkChangeEvent(event: MarkChangeEvent) {
 
           const unit = {
             typeName: unitToSpawn.desc.typeName,
+            heading,
           }
 
           if (count) {
@@ -135,7 +137,7 @@ async function handleMarkChangeEvent(event: MarkChangeEvent) {
           return unit
         })
         .flat(2)
-        .filter((a): a is { typeName: string } => Boolean(a))
+        .filter((a): a is { typeName: string; heading: number } => Boolean(a))
 
       if (unitsToSpawn.length > 0) {
         const country = countryFrom(coalition)
@@ -143,18 +145,19 @@ async function handleMarkChangeEvent(event: MarkChangeEvent) {
           // multiple units
           await spawnGroundUnitsInCircle(
             country,
-            addedMark.position,
+            position,
             100, // TODO: handle radius here
             unitsToSpawn
           )
         } else {
+          const { heading, typeName } = unitsToSpawn[0]
           const unit = await createUnit({
             country,
             // TODO: choose a heading to spawn the unit at
-            heading: 0,
+            heading,
             isPlayerSlot: false,
-            position: addedMark.position,
-            typeName: unitsToSpawn[0].typeName,
+            position,
+            typeName,
           })
           // single unit
           await spawnGroundUnit(unit)
@@ -200,15 +203,13 @@ async function handleMarkChangeEvent(event: MarkChangeEvent) {
       }
 
       await Promise.all(
-        foundUnits.map(async element => {
-          const { lat, lon, alt } = element
-          const unitPosition = { lat, lon, alt }
+        foundUnits.map(async unit => {
+          const { name, position } = unit
           if (
-            distanceFrom(markPosition, unitPosition) <=
+            distanceFrom(markPosition, position) <=
             (command.radius || DESTROY_SINGLE_UNIT_SEARCH_RANGE)
           ) {
-            const { name } = element
-            await destroy(name)
+            await despawnUnit(unit)
             await unitGone({ name })
           }
         })
@@ -239,7 +240,11 @@ async function handleMarkChangeEvent(event: MarkChangeEvent) {
 
       const unitsToSpawn = typeNamesFrom(spawnGroup.typeNamesJson).map(
         typeName => {
-          return { typeName }
+          return {
+            // TODO: support heading when spawning groups
+            heading: 0,
+            typeName,
+          }
         }
       )
 
@@ -386,10 +391,27 @@ async function handleBirth(event: BirthEvent) {
     // no-op
     return
   }
-  const { groupName } = event.initiator.unit
+  const { groupName, country, name, playerName, position, typeName } =
+    event.initiator.unit
 
   if (!groupName) {
     throw new Error('expected player entering unit to have groupName')
+  }
+
+  if (playerName && playerName.length > 0) {
+    // create a player unit if it doesn't exist`
+    try {
+      await createUnit({
+        country,
+        heading: 0,
+        name,
+        isPlayerSlot: true,
+        position,
+        typeName,
+      })
+    } catch (err) {
+      // silently ignore these
+    }
   }
 }
 
@@ -409,7 +431,6 @@ async function handleGroupCommand(event: GroupCommandEvent) {
 
       const unit = await createUnit({
         country: countryFrom(group.coalition),
-        // TODO: choose a heading to spawn the unit at
         heading: 0,
         isPlayerSlot: false,
         position: positionLLFrom(position),
