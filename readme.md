@@ -5,7 +5,7 @@
 - clone this repo
 - install deps with `npm install`
 - create generated code with `npm run codegen`
-- start the server with a grpc address `npm start -- --address "localhost:50051"`
+- start the server with a grpc address `npm start -- --address "localhost:50051" --missions <full path of the missions folder in your DCS Saved Games`
 
 **vscode extensions you should have:**
 
